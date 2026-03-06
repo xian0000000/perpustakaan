@@ -1,0 +1,32 @@
+User :
+    Data User:
+    - ID User
+    - Nama
+    - Saldo
+    - Role :
+        - Admin :
+            Fitur :
+            - CRUD Buku
+            - Melihat Status Pengguna
+            - Memanipulasi Daftar dan Stock Buku
+            - Monitoring Peminjaman
+        - Pengguna :
+            Fitur :
+            - Melihat-lihat Buku
+            - Meminjam Buku(Membaca Buku)
+            - Mengambalikan Buku
+Buku :
+    Data Buku:
+    - ID Buku
+    - Nama Buku
+    - Penulis
+    - Isi Buku
+    - Stock 
+Peminjaman :
+    Data Peminjaman :
+    - ID Peminjaman
+    - (User)
+    - (Buku)
+    - Tanggal Peminjaman
+    - Tanggal Pengembalian
+    - Status
