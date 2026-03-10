@@ -241,4 +241,8 @@ and modern web development.
 
 # ⭐ If you like this project
 
+<<<<<<< HEAD
 Give it a star on GitHub.
+=======
+Give it a star on GitHub.
+>>>>>>> c3f90cd (update readme)
