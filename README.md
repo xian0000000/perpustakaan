@@ -230,7 +230,7 @@ assets/
 
 # 👨‍💻 Author
 
-Emma
+Xina The First ( Afriansyah Saputro )
 
 ```
 Student Developer exploring backend systems, system architecture,
