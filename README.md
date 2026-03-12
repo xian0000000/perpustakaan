@@ -4,6 +4,8 @@ Modern web-based **Library Management System** built with a scalable full-stack 
 
 Designed to manage books, borrowing records, and user authentication with a clean and modular backend architecture.
 
+https://frontend-production-ac9a.up.railway.app/ <--- full preview
+
 ---
 
 # ✨ Preview
