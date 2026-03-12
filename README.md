@@ -1,248 +1,36 @@
-# 📚 Library Management System
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-Modern web-based **Library Management System** built with a scalable full-stack architecture using **Next.js** and **Golang**.
+## Getting Started
 
-Designed to manage books, borrowing records, and user authentication with a clean and modular backend architecture.
-
----
-
-# ✨ Preview
-
-## Dashboard
-![dashboard](assets/dashboard.png)
-
-## Login
-![history](assets/login.png)
-
-## Books Management
-![books](assets/books.png)
-
-## Borrowing System
-![borrow](assets/borrow.png)
-
----
-
-# 🧠 Architecture
-
-This project follows a **separated frontend-backend architecture**.
-
-```
-Frontend  →  REST API  →  Backend  →  Database
-Next.js       HTTP        Golang       SQL
-```
-
----
-
-# 🧱 Tech Stack
-
-## Frontend
-
-| Technology | Description |
-|------------|-------------|
-| Next.js | React Framework |
-| React | UI Library |
-| TypeScript | Static typing |
-| TailwindCSS | Styling |
-
-## Backend
-
-| Technology | Description |
-|------------|-------------|
-| Golang | Backend language |
-| JWT | Authentication |
-| REST API | API communication |
-| Middleware | Authorization layer |
-
----
-
-# 📦 Project Structure
-
-```
-perpustakaan
-├── backend
-│   ├── config
-│   │   └── database.go
-│   │
-│   ├── handlers
-│   │   ├── login.go
-│   │   ├── register.go
-│   │   ├── tambahbuku.go
-│   │   ├── updatebuku.go
-│   │   ├── deletebuku.go
-│   │   ├── peminjaman.go
-│   │   └── pengembalian.go
-│   │
-│   ├── middleware
-│   │   ├── auth.go
-│   │   └── admin.go
-│   │
-│   ├── models
-│   │   ├── user.go
-│   │   ├── buku.go
-│   │   └── peminjaman.go
-│   │
-│   ├── routers
-│   │   └── router.go
-│   │
-│   └── services
-│       ├── hashpassword.go
-│       ├── cekpassword.go
-│       └── jwtgenerate.go
-│
-└── frontend
-    ├── app
-    ├── components
-    ├── styles
-    └── pages
-```
-
----
-
-# 🔑 Features
-
-### Authentication
-
-- User Registration
-- Secure Login
-- JWT Authentication
-- Role-based Access
-
-### Book Management
-
-- Add new books
-- Update book information
-- Delete books
-- Fetch books list
-
-### Borrowing System
-
-- Borrow books
-- Return books
-- Track borrowing history
-
-### Security
-
-- Password hashing
-- JWT tokens
-- Auth middleware
-- Admin protection
-
----
-
-# 🚀 Installation
-
-## Clone Repository
+First, run the development server:
 
 ```bash
-git clone https://github.com/yourusername/perpustakaan.git
-cd perpustakaan
-```
-
----
-
-# Backend Setup
-
-```
-cd backend
-go mod tidy
-go run main.go
-```
-
----
-
-# Frontend Setup
-
-```
-cd frontend
-npm install
 npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
 ```
 
-Application will run at:
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-```
-http://localhost:3000
-```
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
----
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-# 🔌 API Example
+## Learn More
 
-| Method | Endpoint | Description |
-|------|------|------|
-| POST | /login | User login |
-| POST | /register | User registration |
-| GET | /books | Get books |
-| POST | /books | Add book |
-| PUT | /books/:id | Update book |
-| DELETE | /books/:id | Delete book |
+To learn more about Next.js, take a look at the following resources:
 
----
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
-# 📜 Security Design
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-Authentication is implemented using **JWT tokens**.
+## Deploy on Vercel
 
-Flow:
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
-```
-Login
- ↓
-JWT Generated
- ↓
-Token sent to client
- ↓
-Protected routes via middleware
-```
-
----
-
-# 🧪 Development Philosophy
-
-This project is built with a focus on:
-
-- modular backend structure
-- clean separation of concerns
-- scalable architecture
-- maintainable codebase
-
----
-
-# 📷 Screenshots
-
-Add your screenshots inside:
-
-```
-assets/
-```
-
-Example:
-
-```
-assets/
- ├── dashboard.png
- ├── books.png
- ├── borrow.png
- └── history.png
-```
-
----
-
-# 👨‍💻 Author
-
-Xina The First ( Afriansyah Saputro )
-
-```
-Student Developer exploring backend systems, system architecture,
-and modern web development.
-```
-
----
-
-# ⭐ If you like this project
-
-<<<<<<< HEAD
-Give it a star on GitHub.
-=======
-Give it a star on GitHub.
->>>>>>> c3f90cd (update readme)
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.

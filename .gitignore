@@ -1,93 +1,41 @@
-# Binaries
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-/bin/
-/dist/
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# Test binary
-*.test
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
 
-# Go workspace
-go.work.sum
+# testing
+/coverage
 
-# Environment & secrets
-.env
-.env.local
-.env.*.local
-*.env
+# next.js
+/.next/
+/out/
 
-# Vendor (opsional, tergantung preferensi tim)
-# vendor/
-
-# Air (live reload)
-tmp/
-
-# Debug
-__debug_bin*
-
-# OS
-.DS_Store
-Thumbs.db
-# Dependencies
-node_modules/
-.pnp
-.pnp.js
-
-# Next.js build output
-.next/
-out/
-
-# Production build
+# production
 /build
 
-# Environment & secrets
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# misc
+.DS_Store
+*.pem
 
-# Debug logs
+# debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# Vercel
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
 .vercel
 
-# TypeScript
+# typescript
 *.tsbuildinfo
 next-env.d.ts
-
-# OS
-.DS_Store
-Thumbs.db
-
-# IDE / Editor
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Coverage & profiling (Go)
-*.out
-coverage.html
-cpu.prof
-mem.prof
-
-# Air config (kalau lo pakai)
-.air.toml   # opsional, bisa di-commit kalau mau share config
-
-# Next.js cache
-.cache/
-
-# Turbo (kalau monorepo pakai turborepo)
-.turbo/
-
-# Testing
-coverage/
-__snapshots__/
