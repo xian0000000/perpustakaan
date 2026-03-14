@@ -7,9 +7,9 @@ User :
         - Admin :
             Fitur :
             - CRUD Buku
-            - Melihat Status Pengguna
+            - Melihat Status Pengguna (update)
             - Memanipulasi Daftar dan Stock Buku
-            - Monitoring Peminjaman
+            - Monitoring Peminjaman (update)
         - Pengguna :
             Fitur :
             - Melihat-lihat Buku
