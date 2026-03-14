@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const API = "https://backend-production-5ad9.up.railway.app"; // proxy via next.config.ts → http://localhost:8080
+const API = "/backend"; // proxy via next.config.ts → http://localhost:8080
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
