@@ -10,10 +10,11 @@ interface ChatPanelProps {
   onlineUsers: PresenceUser[];
   sendChat: (pesan: string) => void;
   newMessages: ChatMessage[]; // pushed from WS
+  onMessagesConsumed: () => void; // reset queue after consuming
   sendPresence: (aksi: string, detail?: string) => void;
 }
 
-export function ChatPanel({ onClose, onlineUsers, sendChat, newMessages, sendPresence }: ChatPanelProps) {
+export function ChatPanel({ onClose, onlineUsers, sendChat, newMessages, onMessagesConsumed, sendPresence }: ChatPanelProps) {
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState("");
@@ -31,12 +32,17 @@ export function ChatPanel({ onClose, onlineUsers, sendChat, newMessages, sendPre
     return () => sendPresence("browsing");
   }, []); // eslint-disable-line
 
-  // Append new WS messages
+  // Append new WS messages then reset queue
   useEffect(() => {
     if (newMessages.length > 0) {
-      setHistory(h => [...h, ...newMessages]);
+      setHistory(h => {
+        const existingIds = new Set(h.map(m => m.ID));
+        const fresh = newMessages.filter(m => !existingIds.has(m.ID));
+        return fresh.length > 0 ? [...h, ...fresh] : h;
+      });
+      onMessagesConsumed();
     }
-  }, [newMessages]);
+  }, [newMessages]); // eslint-disable-line
 
   // Auto scroll
   useEffect(() => {
