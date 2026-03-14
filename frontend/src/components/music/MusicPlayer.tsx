@@ -1,9 +1,34 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 
+// Self-contained YouTube IFrame API types (no @types/youtube needed)
+interface YTPlayer {
+  playVideo: () => void;
+  pauseVideo: () => void;
+  loadVideoById: (videoId: string) => void;
+  setVolume: (volume: number) => void;
+  destroy: () => void;
+}
+
+interface YTPlayerOptions {
+  height: string;
+  width: string;
+  videoId: string;
+  playerVars?: Record<string, number | string>;
+  events?: {
+    onReady?: (e: { target: YTPlayer }) => void;
+    onStateChange?: (e: { data: number }) => void;
+  };
+}
+
+interface YTNamespace {
+  Player: new (el: HTMLDivElement, opts: YTPlayerOptions) => YTPlayer;
+  PlayerState: { PLAYING: number; PAUSED: number; ENDED: number };
+}
+
 declare global {
   interface Window {
-    YT: typeof YT;
+    YT: YTNamespace;
     onYouTubeIframeAPIReady: () => void;
   }
 }
@@ -18,7 +43,7 @@ const TRACKS: Track[] = [
 ];
 
 export function MusicPlayer() {
-  const playerRef = useRef<YT.Player | null>(null);
+  const playerRef = useRef<YTPlayer | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [trackIdx, setTrackIdx] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -54,8 +79,8 @@ export function MusicPlayer() {
       videoId: track.videoId,
       playerVars: { autoplay: 0, controls: 0, disablekb: 1, fs: 0, iv_load_policy: 3, modestbranding: 1, playsinline: 1 },
       events: {
-        onReady: (e: YT.PlayerEvent) => { e.target.setVolume(volume); setReady(true); },
-        onStateChange: (e: YT.OnStateChangeEvent) => {
+        onReady: (e: { target: YTPlayer }) => { e.target.setVolume(volume); setReady(true); },
+        onStateChange: (e: { data: number }) => {
           if (e.data === window.YT.PlayerState.PLAYING) setPlaying(true);
           if (e.data === window.YT.PlayerState.PAUSED) setPlaying(false);
           if (e.data === window.YT.PlayerState.ENDED) setTrackIdx(i => (i + 1) % TRACKS.length);
