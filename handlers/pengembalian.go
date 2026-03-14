@@ -90,6 +90,9 @@ func KembalikanBuku(c *gin.Context) {
 		return
 	}
 
+	// Catat aktivitas
+	go CatatAktivitas(userID, "kembali_buku", peminjaman.BukuID)
+
 	c.JSON(200, gin.H{
 		"message": "buku berhasil dikembalikan",
 		"data":    peminjaman,
