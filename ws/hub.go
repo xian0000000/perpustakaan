@@ -4,27 +4,19 @@ import (
 	"encoding/json"
 	"log"
 	"sync"
-	"time"
 )
 
-// ─── Message types ──────────────────────────────────────────────────────────
+// ─── Wire types ─────────────────────────────────────────────────────────────
 
 type WSMessage struct {
 	Type    string          `json:"type"`
 	Payload json.RawMessage `json:"payload"`
 }
 
-// Presence payload
-type PresencePayload struct {
-	UserID   uint   `json:"user_id"`
-	Nama     string `json:"nama"`
-	Role     string `json:"role"`
-	Aksi     string `json:"aksi"`    // "online", "offline", "membaca", "chat", "mading", "browsing"
-	TargetID uint   `json:"target_id,omitempty"`
-	Detail   string `json:"detail,omitempty"` // judul buku yg dibaca, dll
+type OnlineCountPayload struct {
+	Count int `json:"count"`
 }
 
-// Chat payload
 type ChatPayload struct {
 	ID     uint   `json:"id"`
 	UserID uint   `json:"user_id"`
@@ -33,7 +25,15 @@ type ChatPayload struct {
 	Waktu  string `json:"waktu"`
 }
 
-// Mading payload
+type PresencePayload struct {
+	UserID   uint   `json:"user_id"`
+	Nama     string `json:"nama"`
+	Role     string `json:"role"`
+	Aksi     string `json:"aksi"`
+	TargetID uint   `json:"target_id,omitempty"`
+	Detail   string `json:"detail,omitempty"`
+}
+
 type MadingPayload struct {
 	ID       uint   `json:"id"`
 	Judul    string `json:"judul"`
@@ -46,26 +46,22 @@ type MadingPayload struct {
 // ─── Client ─────────────────────────────────────────────────────────────────
 
 type Client struct {
-	Hub      *Hub
-	Send     chan []byte
-	UserID   uint
-	Nama     string
-	Role     string
-	Aksi     string
-	Detail   string
-	TargetID uint
-	LastSeen time.Time
-}
-
-func (c *Client) UpdatePresence(aksi, detail string, targetID uint) {
-	c.Aksi = aksi
-	c.Detail = detail
-	c.TargetID = targetID
-	c.LastSeen = time.Now()
-	c.Hub.BroadcastPresence()
+	Hub    *Hub
+	Send   chan []byte
+	UserID uint
+	Nama   string
+	Role   string
+	Aksi   string
+	Detail string
 }
 
 // ─── Hub ─────────────────────────────────────────────────────────────────────
+// Mirrors reference chatSocket.js:
+//   onlineUser = new Set()             → clients map[*Client]bool
+//   hitung()                           → broadcastOnlineCount()
+//   socket.emit('pesan lama', msgs)    → SendTo(client, "pesan_lama", msgs)
+//   io.emit('chat message', msg)       → Broadcast("chat", payload)
+//   disconnect → delete + hitung       → unregister + broadcastOnlineCount
 
 type Hub struct {
 	clients    map[*Client]bool
@@ -80,7 +76,7 @@ var H = NewHub()
 func NewHub() *Hub {
 	return &Hub{
 		clients:    make(map[*Client]bool),
-		broadcast:  make(chan []byte, 256),
+		broadcast:  make(chan []byte, 512),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 	}
@@ -89,28 +85,31 @@ func NewHub() *Hub {
 func (h *Hub) Run() {
 	for {
 		select {
-		case client := <-h.register:
+		case c := <-h.register:
 			h.mu.Lock()
-			h.clients[client] = true
+			h.clients[c] = true
 			h.mu.Unlock()
-			h.BroadcastPresence()
+			// mirrors: onlineUser.add(socket.id); hitung();
+			h.broadcastOnlineCount()
+			// NOTE: "pesan lama" is sent in HandleWS goroutine right after Register
 
-		case client := <-h.unregister:
+		case c := <-h.unregister:
 			h.mu.Lock()
-			if _, ok := h.clients[client]; ok {
-				delete(h.clients, client)
-				close(client.Send)
+			if _, ok := h.clients[c]; ok {
+				delete(h.clients, c)
+				close(c.Send)
 			}
 			h.mu.Unlock()
-			h.BroadcastPresence()
+			// mirrors: onlineUser.delete(socket.id); hitung();
+			h.broadcastOnlineCount()
+			h.broadcastPresence()
 
 		case msg := <-h.broadcast:
 			h.mu.RLock()
-			for client := range h.clients {
+			for c := range h.clients {
 				select {
-				case client.Send <- msg:
+				case c.Send <- msg:
 				default:
-					// slow client - skip
 				}
 			}
 			h.mu.RUnlock()
@@ -118,9 +117,10 @@ func (h *Hub) Run() {
 	}
 }
 
-func (h *Hub) Register(c *Client) { h.register <- c }
+func (h *Hub) Register(c *Client)   { h.register <- c }
 func (h *Hub) Unregister(c *Client) { h.unregister <- c }
 
+// Broadcast mirrors io.emit() — sends to ALL clients
 func (h *Hub) Broadcast(msgType string, payload interface{}) {
 	p, err := json.Marshal(payload)
 	if err != nil {
@@ -133,29 +133,51 @@ func (h *Hub) Broadcast(msgType string, payload interface{}) {
 	select {
 	case h.broadcast <- msg:
 	default:
-		log.Println("ws: broadcast channel full, dropping message")
+		log.Println("ws: broadcast channel full, dropping")
 	}
 }
 
-func (h *Hub) BroadcastPresence() {
+// SendTo mirrors socket.emit() — sends only to one client
+func (h *Hub) SendTo(c *Client, msgType string, payload interface{}) {
+	p, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	msg, err := json.Marshal(WSMessage{Type: msgType, Payload: p})
+	if err != nil {
+		return
+	}
+	select {
+	case c.Send <- msg:
+	default:
+	}
+}
+
+// broadcastOnlineCount mirrors hitung() in chatSocket.js
+func (h *Hub) broadcastOnlineCount() {
+	h.mu.RLock()
+	count := len(h.clients)
+	h.mu.RUnlock()
+	h.Broadcast("online_count", OnlineCountPayload{Count: count})
+}
+
+func (h *Hub) broadcastPresence() {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	var users []PresencePayload
+	users := make([]PresencePayload, 0, len(h.clients))
 	for c := range h.clients {
 		users = append(users, PresencePayload{
-			UserID:   c.UserID,
-			Nama:     c.Nama,
-			Role:     c.Role,
-			Aksi:     c.Aksi,
-			TargetID: c.TargetID,
-			Detail:   c.Detail,
+			UserID: c.UserID,
+			Nama:   c.Nama,
+			Role:   c.Role,
+			Aksi:   c.Aksi,
+			Detail: c.Detail,
 		})
 	}
 
 	p, _ := json.Marshal(users)
 	msg, _ := json.Marshal(WSMessage{Type: "presence", Payload: p})
-
 	for c := range h.clients {
 		select {
 		case c.Send <- msg:
@@ -164,20 +186,49 @@ func (h *Hub) BroadcastPresence() {
 	}
 }
 
+func (h *Hub) BroadcastPresence() { h.broadcastPresence() }
+
+func (h *Hub) UpdatePresence(c *Client, aksi, detail string) {
+	c.Aksi = aksi
+	c.Detail = detail
+	h.broadcastPresence()
+}
+
+// ─── Admin helpers ───────────────────────────────────────────────────────────
+
 func (h *Hub) GetOnlineUsers() []PresencePayload {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-
-	var users []PresencePayload
+	users := make([]PresencePayload, 0, len(h.clients))
 	for c := range h.clients {
 		users = append(users, PresencePayload{
-			UserID:   c.UserID,
-			Nama:     c.Nama,
-			Role:     c.Role,
-			Aksi:     c.Aksi,
-			TargetID: c.TargetID,
-			Detail:   c.Detail,
+			UserID: c.UserID, Nama: c.Nama, Role: c.Role,
+			Aksi: c.Aksi, Detail: c.Detail,
 		})
 	}
 	return users
+}
+
+func (h *Hub) GetOnlineCount() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.clients)
+}
+
+// KickUser closes a connection by UserID — mirrors admin/kick in reference
+func (h *Hub) KickUser(userID uint) bool {
+	h.mu.RLock()
+	var target *Client
+	for c := range h.clients {
+		if c.UserID == userID {
+			target = c
+			break
+		}
+	}
+	h.mu.RUnlock()
+	if target == nil {
+		return false
+	}
+	h.unregister <- target
+	return true
 }
