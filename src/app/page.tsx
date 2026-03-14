@@ -49,25 +49,31 @@ export default function Page() {
 
   // Realtime state
   const [madingQueue, setMadingQueue] = useState<MadingPost[]>([]);
-  const [unreadChat, setUnreadChat] = useState(0);
+  const [unreadChat, setUnreadChat]   = useState(0);
   const [unreadMading, setUnreadMading] = useState(0);
 
-  // Use ref for activeId so callbacks always see latest value (no stale closure)
+  // Ref tracks active panel without stale closure in callbacks
   const activeIdRef = useRef<PanelId | null>(null);
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
 
-  // Direct push ref — ChatPanel registers its appendMessage fn here
+  // ChatPanel registers its push + load fns here
+  // push: called per new "chat" WS event — direct setState in panel
+  // load: called once on "pesan_lama" WS event (history on connect)
   const chatPushRef = useRef<((msg: ChatMessage) => void) | null>(null);
+  const chatLoadRef = useRef<((msgs: ChatMessage[]) => void) | null>(null);
 
+  // mirrors: socket.on('chat message', msg => setMessages(prev => [...prev, msg]))
   const handleChat = useCallback((msg: ChatMessage) => {
-    // If panel is open, push directly into it — zero re-render overhead on page
     if (activeIdRef.current === "chat" && chatPushRef.current) {
       chatPushRef.current(msg);
     } else {
-      // Panel closed — increment unread badge only
       setUnreadChat(n => n + 1);
-      // Still push if panel mounts later (it loads history on mount so this is fine)
     }
+  }, []);
+
+  // mirrors: socket.on('pesan lama', msgs => setMessages(msgs))
+  const handlePesanLama = useCallback((msgs: ChatMessage[]) => {
+    if (chatLoadRef.current) chatLoadRef.current(msgs);
   }, []);
 
   const handleMading = useCallback((post: MadingPost) => {
@@ -75,16 +81,18 @@ export default function Page() {
     if (activeIdRef.current !== "mading") setUnreadMading(n => n + 1);
   }, []);
 
-  const { status: wsStatus, onlineUsers, sendPresence, sendChat } = useWebSocket(handleChat, handleMading);
+  const { status: wsStatus, onlineCount, onlineUsers, sendPresence, sendChat } =
+    useWebSocket(handleChat, handlePesanLama, handleMading);
+
   useEffect(() => { setRole(getRole()); setNama(getNama()); }, []);
 
-  // Reset unread when panel opens
+  // Reset unread badge when panel opens
   useEffect(() => {
     if (activeId === "chat") setUnreadChat(0);
     if (activeId === "mading") setUnreadMading(0);
   }, [activeId]);
 
-  // Send initial presence when connected
+  // Send presence on connect
   useEffect(() => {
     if (role && wsStatus === "connected") sendPresence("browsing");
   }, [role, wsStatus]); // eslint-disable-line
@@ -107,7 +115,7 @@ export default function Page() {
   function handleLogin(r: UserRole) { setRole(r); setNama(getNama()); }
   function handleLogout() { setRole(null); setNama(""); setActiveId(null); }
 
-  const activeHotspot = HOTSPOTS.find(h => h.id === activeId);
+  const activeHotspot  = HOTSPOTS.find(h => h.id === activeId);
   const hoveredHotspot = HOTSPOTS.find(h => h.id === hoveredId);
   const showPanel = !!activeId && !!activeHotspot;
 
@@ -119,9 +127,9 @@ export default function Page() {
       case "throne":      return <ThronePanel onClose={() => setActiveId(null)} sendPresence={sendPresence} />;
       case "history":     return <HistoryPanel onClose={() => setActiveId(null)} />;
       case "profile":     return <ProfilePanel onClose={() => setActiveId(null)} onLogout={handleLogout} />;
-      case "chat":        return <ChatPanel onClose={() => setActiveId(null)} onlineUsers={onlineUsers} sendChat={sendChat} onNewMessage={handleChat} pushRef={chatPushRef} sendPresence={sendPresence} />;
+      case "chat":        return <ChatPanel onClose={() => setActiveId(null)} onlineUsers={onlineUsers} onlineCount={onlineCount} sendChat={sendChat} onNewMessage={handleChat} pushRef={chatPushRef} loadRef={chatLoadRef} sendPresence={sendPresence} />;
       case "mading":      return <MadingPanel onClose={() => setActiveId(null)} role={role} newPosts={madingQueue} sendPresence={sendPresence} />;
-      case "admin":       return <AdminPanel onClose={() => setActiveId(null)} onlineUsers={onlineUsers} />;
+      case "admin":       return <AdminPanel onClose={() => setActiveId(null)} onlineUsers={onlineUsers} onlineCount={onlineCount} />;
     }
   }
 
@@ -149,7 +157,7 @@ export default function Page() {
           {/* WS indicator */}
           {role && (
             <span style={{ fontFamily: "monospace", fontSize: 9, color: wsStatus === "connected" ? "#34d399" : wsStatus === "connecting" ? "#fbbf24" : "#5a4f6a" }}>
-              {wsStatus === "connected" ? "● live" : wsStatus === "connecting" ? "○ menghubungkan…" : "○ offline"}
+              {wsStatus === "connected" ? `● live · ${onlineCount} online` : wsStatus === "connecting" ? "○ menghubungkan…" : "○ offline"}
             </span>
           )}
           {/* Unread badges */}

@@ -7,67 +7,92 @@ export type WSStatus = "connecting" | "connected" | "disconnected";
 
 interface UseWSReturn {
   status: WSStatus;
-  onlineUsers: PresenceUser[];
-  sendPresence: (aksi: string, detail?: string, targetId?: number) => void;
+  onlineCount: number;          // mirrors: onlineUser.size  (socket.on "online_count")
+  onlineUsers: PresenceUser[];  // full presence list        (socket.on "presence")
+  sendPresence: (aksi: string, detail?: string) => void;
   sendChat: (pesan: string) => void;
 }
 
 export function useWebSocket(
   onChat: (msg: ChatMessage) => void,
+  onPesanLama: (msgs: ChatMessage[]) => void,   // mirrors: socket.on('pesan lama', ...)
   onMading: (post: MadingPost) => void,
 ): UseWSReturn {
   const ws = useRef<WebSocket | null>(null);
-  const [status, setStatus] = useState<WSStatus>("disconnected");
+  const [status, setStatus]           = useState<WSStatus>("disconnected");
+  const [onlineCount, setOnlineCount] = useState(0);
   const [onlineUsers, setOnlineUsers] = useState<PresenceUser[]>([]);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const mountedRef = useRef(true);
+  const mountedRef     = useRef(true);
 
-  // Always keep latest callbacks in refs — no stale closures
-  const onChatRef = useRef(onChat);
-  const onMadingRef = useRef(onMading);
-  useEffect(() => { onChatRef.current = onChat; }, [onChat]);
-  useEffect(() => { onMadingRef.current = onMading; }, [onMading]);
+  // Keep callbacks in refs — no stale closures, no reconnects on re-render
+  const onChatRef      = useRef(onChat);
+  const onPesanLamaRef = useRef(onPesanLama);
+  const onMadingRef    = useRef(onMading);
+  useEffect(() => { onChatRef.current      = onChat;      }, [onChat]);
+  useEffect(() => { onPesanLamaRef.current = onPesanLama; }, [onPesanLama]);
+  useEffect(() => { onMadingRef.current    = onMading;    }, [onMading]);
 
   const handleMessage = useCallback((e: MessageEvent) => {
     try {
-      const msg = JSON.parse(e.data as string) as { type: string; payload: string };
+      const msg     = JSON.parse(e.data as string) as { type: string; payload: string };
       const payload = JSON.parse(msg.payload ?? "null");
 
-      if (msg.type === "presence") {
-        // Backend sends PresencePayload with json tags: user_id, nama, role, aksi, detail
-        const raw = payload as Array<{
-          user_id: number; nama: string; role: string;
-          aksi: string; target_id?: number; detail?: string;
-        }>;
-        const users: PresenceUser[] = (raw ?? []).map(u => ({
-          user_id: u.user_id,
-          nama: u.nama,
-          role: u.role,
-          aksi: u.aksi,
-          target_id: u.target_id,
-          detail: u.detail,
-        }));
-        setOnlineUsers(users);
+      switch (msg.type) {
 
-      } else if (msg.type === "chat") {
-        // Backend sends ChatPayload: id, user_id, nama, pesan, waktu
-        const raw = payload as { id: number; user_id: number; nama: string; pesan: string; waktu: string };
-        const chatMsg: ChatMessage = {
-          ID: raw.id,
-          UserID: raw.user_id,
-          Nama: raw.nama,
-          Pesan: raw.pesan,
-          Waktu: raw.waktu,
-        };
-        onChatRef.current(chatMsg);
+        // mirrors: socket.on('online user', (data) => setOnlineCount(data.count))
+        case "online_count": {
+          const d = payload as { count: number };
+          setOnlineCount(d.count ?? 0);
+          break;
+        }
 
-      } else if (msg.type === "mading_new") {
-        const raw = payload as { ID: number; Judul: string; Isi: string; Kategori: string; Nama: string; Waktu: string };
-        const post: MadingPost = {
-          ID: raw.ID, Judul: raw.Judul, Isi: raw.Isi, Kategori: raw.Kategori,
-          UserID: 0, CreatedAt: raw.Waktu, User: { ID: 0, Nama: raw.Nama, Saldo: 0, Role: "" },
-        };
-        onMadingRef.current(post);
+        // mirrors: socket.emit('pesan lama', messages)  — received once on connect
+        case "pesan_lama": {
+          const raw = payload as Array<{
+            id: number; user_id: number; nama: string; pesan: string; waktu: string;
+          }>;
+          const msgs: ChatMessage[] = (raw ?? []).map(m => ({
+            ID: m.id, UserID: m.user_id, Nama: m.nama, Pesan: m.pesan, Waktu: m.waktu,
+          }));
+          onPesanLamaRef.current(msgs);
+          break;
+        }
+
+        // mirrors: socket.on('chat message', (msg) => setMessages(prev => [...prev, msg]))
+        case "chat": {
+          const m = payload as { id: number; user_id: number; nama: string; pesan: string; waktu: string };
+          onChatRef.current({
+            ID: m.id, UserID: m.user_id, Nama: m.nama, Pesan: m.pesan, Waktu: m.waktu,
+          });
+          break;
+        }
+
+        // presence list — for sidebar + admin monitoring
+        case "presence": {
+          const raw = payload as Array<{
+            user_id: number; nama: string; role: string;
+            aksi: string; target_id?: number; detail?: string;
+          }>;
+          setOnlineUsers((raw ?? []).map(u => ({
+            user_id: u.user_id, nama: u.nama, role: u.role,
+            aksi: u.aksi, target_id: u.target_id, detail: u.detail,
+          })));
+          break;
+        }
+
+        case "mading_new": {
+          const r = payload as {
+            id: number; judul: string; isi: string;
+            kategori: string; nama: string; waktu: string;
+          };
+          onMadingRef.current({
+            ID: r.id, Judul: r.judul, Isi: r.isi, Kategori: r.kategori,
+            UserID: 0, CreatedAt: r.waktu,
+            User: { ID: 0, Nama: r.nama, Saldo: 0, Role: "" },
+          });
+          break;
+        }
       }
     } catch { /* ignore malformed */ }
   }, []);
@@ -76,8 +101,7 @@ export function useWebSocket(
     const token = getToken();
     if (!token || !mountedRef.current) return;
 
-    const url = `${WS_URL}/api/ws?token=${token}`;
-    const socket = new WebSocket(url);
+    const socket = new WebSocket(`${WS_URL}/api/ws?token=${token}`);
     ws.current = socket;
     setStatus("connecting");
 
@@ -87,18 +111,9 @@ export function useWebSocket(
 
     socket.onmessage = handleMessage;
 
-    // Respond to server pings so connection stays alive (backend pings every 30s)
-    socket.addEventListener("message", (e: MessageEvent) => {
-      // Gorilla WS ping is handled at protocol level; browser auto-pongs.
-      // But if server sends a text "ping", reply with pong:
-      if (e.data === "ping") socket.send("pong");
-    });
-
     socket.onclose = (ev) => {
       if (!mountedRef.current) return;
       setStatus("disconnected");
-      // Don't clear onlineUsers immediately — keep last known state briefly
-      // Reconnect with backoff
       const delay = ev.wasClean ? 1000 : 3000;
       reconnectTimer.current = setTimeout(connect, delay);
     };
@@ -122,13 +137,13 @@ export function useWebSocket(
     }
   }, []);
 
-  const sendPresence = useCallback((aksi: string, detail = "", targetId = 0) => {
-    send({ type: "presence_update", payload: { aksi, detail, target_id: targetId } });
+  const sendPresence = useCallback((aksi: string, detail = "") => {
+    send({ type: "presence_update", payload: { aksi, detail } });
   }, [send]);
 
   const sendChat = useCallback((pesan: string) => {
     send({ type: "chat", payload: { pesan } });
   }, [send]);
 
-  return { status, onlineUsers, sendPresence, sendChat };
+  return { status, onlineCount, onlineUsers, sendPresence, sendChat };
 }

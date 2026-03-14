@@ -6,7 +6,15 @@ import { PanelHeader, Field, Feedback, LoadingDots, ps, MC, roleAdmin, rolePengg
 
 type AdminTab = "stats" | "monitoring" | "buku" | "users" | "peminjaman";
 
-export function AdminPanel({ onClose, onlineUsers }: { onClose: () => void; onlineUsers: PresenceUser[] }) {
+export function AdminPanel({
+  onClose,
+  onlineUsers,
+  onlineCount,
+}: {
+  onClose: () => void;
+  onlineUsers: PresenceUser[];
+  onlineCount: number;
+}) {
   const [tab, setTab] = useState<AdminTab>("stats");
   const tabs: { key: AdminTab; icon: string; label: string; color: string }[] = [
     { key: "stats",      icon: "📊", label: "Statistik",  color: "#fbbf24" },
@@ -27,7 +35,7 @@ export function AdminPanel({ onClose, onlineUsers }: { onClose: () => void; onli
         ))}
       </div>
       {tab === "stats"      && <AdminStats />}
-      {tab === "monitoring" && <AdminMonitoring onlineUsers={onlineUsers} />}
+      {tab === "monitoring" && <AdminMonitoring onlineUsers={onlineUsers} onlineCount={onlineCount} />}
       {tab === "buku"       && <AdminBuku />}
       {tab === "users"      && <AdminUsers />}
       {tab === "peminjaman" && <AdminPeminjaman />}
@@ -59,50 +67,144 @@ function AdminStats() {
   );
 }
 
-// ── Monitoring (realtime dari WS + REST fallback) ──────────────────────────
-function AdminMonitoring({ onlineUsers }: { onlineUsers: PresenceUser[] }) {
-  const [view, setView] = useState<"realtime" | "log">("realtime");
-  const [log, setLog] = useState<AktivitasUser[]>([]); const [loadingLog, setLoadingLog] = useState(false); const [error, setError] = useState("");
+// ── Monitoring — mirrors reference admin.html logic ────────────────────────
+// Realtime: dari WS presence (langsung via prop — selalu fresh)
+// Log: REST /api/admin/monitoring (DB log)
+// Kick: POST /api/admin/kick  mirrors reference admin/kick endpoint
+function AdminMonitoring({
+  onlineUsers,
+  onlineCount,
+}: {
+  onlineUsers: PresenceUser[];
+  onlineCount: number;
+}) {
+  const [view, setView]           = useState<"realtime" | "log">("realtime");
+  const [log, setLog]             = useState<AktivitasUser[]>([]);
+  const [loadingLog, setLoadingLog] = useState(false);
+  const [error, setError]         = useState("");
+  const [kickMsg, setKickMsg]     = useState("");
+  const [kicking, setKicking]     = useState<number | null>(null);
 
   function loadLog() {
     setLoadingLog(true); setError("");
     fetch(`${API}/api/admin/monitoring`, { headers: authHeaders() })
-      .then(r => r.json()).then(d => { if (d.data) setLog(d.data); else setError(d.error || "Gagal"); })
-      .catch(() => setError("Gagal")).finally(() => setLoadingLog(false));
+      .then(r => r.json())
+      .then(d => { if (d.data) setLog(d.data); else setError(d.error || "Gagal"); })
+      .catch(() => setError("Gagal"))
+      .finally(() => setLoadingLog(false));
   }
-  useEffect(() => { if (view === "log") loadLog(); }, [view]);
+
+  useEffect(() => { if (view === "log") loadLog(); }, [view]); // eslint-disable-line
+
+  // mirrors reference: admin.html kick button → POST /admin/kick
+  async function handleKick(userID: number, nama: string) {
+    if (!confirm(`Kick ${nama} dari sesi ini?`)) return;
+    setKicking(userID);
+    setKickMsg("");
+    try {
+      const r = await fetch(`${API}/api/admin/kick`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ user_id: userID }),
+      });
+      const d = await r.json();
+      if (d.sukses) setKickMsg(`✓ ${nama} berhasil di-kick`);
+      else setKickMsg(`✗ ${d.error || "Gagal"}`);
+    } catch {
+      setKickMsg("✗ Gagal terhubung");
+    } finally {
+      setKicking(null);
+    }
+  }
 
   return (
     <div style={{ marginTop: 12 }}>
       <div style={{ ...ps.toggleRow, marginBottom: 12 }}>
-        <button onClick={() => setView("realtime")} style={{ ...ps.toggleBtn, fontSize: 11, color: view === "realtime" ? "#e2d9c8" : "#5a4f6a", borderBottomColor: view === "realtime" ? "#f472b6" : "transparent" }}>🟢 Realtime ({onlineUsers.length} online)</button>
-        <button onClick={() => setView("log")} style={{ ...ps.toggleBtn, fontSize: 11, color: view === "log" ? "#e2d9c8" : "#5a4f6a", borderBottomColor: view === "log" ? "#f472b6" : "transparent" }}>📜 Log Aktivitas</button>
-        {view === "log" && <button onClick={loadLog} style={{ ...ps.submitBtn, marginLeft: "auto", padding: "3px 10px", width: "auto", fontSize: 10 }}>↺</button>}
+        <button
+          onClick={() => setView("realtime")}
+          style={{ ...ps.toggleBtn, fontSize: 11, color: view === "realtime" ? "#e2d9c8" : "#5a4f6a", borderBottomColor: view === "realtime" ? "#f472b6" : "transparent" }}
+        >
+          🟢 Realtime ({onlineCount} online)
+        </button>
+        <button
+          onClick={() => setView("log")}
+          style={{ ...ps.toggleBtn, fontSize: 11, color: view === "log" ? "#e2d9c8" : "#5a4f6a", borderBottomColor: view === "log" ? "#f472b6" : "transparent" }}
+        >
+          📜 Log Aktivitas
+        </button>
+        {view === "log" && (
+          <button onClick={loadLog} style={{ ...ps.submitBtn, marginLeft: "auto", padding: "3px 10px", width: "auto", fontSize: 10 }}>↺</button>
+        )}
       </div>
 
+      {kickMsg && (
+        <div style={{
+          fontFamily: "monospace", fontSize: 11, marginBottom: 10,
+          color: kickMsg.startsWith("✓") ? "#34d399" : "#f87171",
+          padding: "6px 10px", background: "rgba(0,0,0,.2)",
+          border: `1px solid ${kickMsg.startsWith("✓") ? "#34d39933" : "#f8717133"}`,
+          borderRadius: 4,
+        }}>
+          {kickMsg}
+        </div>
+      )}
+
+      {/* ── Realtime tab — data comes directly from WS, always fresh ── */}
       {view === "realtime" && (
         <div>
-          {onlineUsers.length === 0 && <p style={ps.empty}>Tidak ada pengguna online saat ini.</p>}
+          {onlineUsers.length === 0 && (
+            <p style={ps.empty}>Tidak ada pengguna online saat ini.</p>
+          )}
           {onlineUsers.map(u => {
             const { icon, color, label } = aksiLabel(u.aksi);
             return (
               <div key={u.user_id} style={{ ...ps.card, display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", marginBottom: 6 }}>
-                <div style={{ ...ps.profileAvatar, width: 36, height: 36, fontSize: 13, flexShrink: 0, borderColor: color + "55", background: color + "15" }}>{u.nama.charAt(0).toUpperCase()}</div>
+                {/* Avatar */}
+                <div style={{ ...ps.profileAvatar, width: 36, height: 36, fontSize: 13, flexShrink: 0, borderColor: color + "55", background: color + "15" }}>
+                  {u.nama.charAt(0).toUpperCase()}
+                </div>
+
+                {/* Info */}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                     <span style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: "#c9b99a" }}>{u.nama}</span>
                     <span style={{ ...ps.statusBadge, color, borderColor: color + "44", background: color + "10", fontSize: 9 }}>{icon} {label}</span>
-                    {u.role === "admin" && <span style={{ ...ps.statusBadge, color: "#fbbf24", borderColor: "#fbbf2444", fontSize: 9 }}>admin</span>}
+                    {u.role === "admin" && (
+                      <span style={{ ...ps.statusBadge, color: "#fbbf24", borderColor: "#fbbf2444", fontSize: 9 }}>admin</span>
+                    )}
                   </div>
-                  {u.detail && <div style={{ fontFamily: "'IM Fell English',serif", fontSize: 11, color: "#7a6e60", marginTop: 3, fontStyle: "italic" }}>📖 {u.detail}</div>}
+                  {u.detail && (
+                    <div style={{ fontFamily: "'IM Fell English',serif", fontSize: 11, color: "#7a6e60", marginTop: 3, fontStyle: "italic" }}>
+                      📖 {u.detail}
+                    </div>
+                  )}
                 </div>
+
+                {/* Online dot */}
                 <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#34d399", boxShadow: "0 0 6px #34d39988", flexShrink: 0 }} />
+
+                {/* Kick button — mirrors reference admin.html kick button */}
+                {u.role !== "admin" && (
+                  <button
+                    onClick={() => handleKick(u.user_id, u.nama)}
+                    disabled={kicking === u.user_id}
+                    style={{
+                      background: "transparent", border: "1px solid #f8717144",
+                      borderRadius: 4, color: "#f87171", cursor: "pointer",
+                      fontSize: 10, padding: "3px 8px", fontFamily: "monospace",
+                      opacity: kicking === u.user_id ? 0.5 : 1, flexShrink: 0,
+                    }}
+                  >
+                    {kicking === u.user_id ? "…" : "kick"}
+                  </button>
+                )}
               </div>
             );
           })}
         </div>
       )}
 
+      {/* ── Log tab — DB history ── */}
       {view === "log" && (
         <div>
           {loadingLog && <LoadingDots />}
@@ -129,7 +231,7 @@ function AdminMonitoring({ onlineUsers }: { onlineUsers: PresenceUser[] }) {
   );
 }
 
-// ── CRUD Buku ──────────────────────────────────────────────────────────────
+
 function AdminBuku() {
   const [tab, setTab] = useState<"tambah" | "update" | "hapus">("tambah");
   const [form, setForm] = useState({ nama_buku: "", penulis: "", isi_buku: "", stock: "" });
