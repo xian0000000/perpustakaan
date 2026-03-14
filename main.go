@@ -12,7 +12,7 @@ func main() {
 	godotenv.Load()
 	config.ConnectDB()
 
-	// Buat router
+	// Buat routers
 	r := gin.Default()
 	routers.SetupRoutes(r)
 
