@@ -62,7 +62,14 @@ func HandlersRegister(c *gin.Context) {
 		return
 	}
 
-	// 4. KIRIM RESPONSE SUKSES
+	// 4. Post mading otomatis
+	go PostSystemMading(
+		"👤 Anggota Baru: "+req.Nama,
+		req.Nama+" baru saja bergabung dengan perpustakaan. Selamat datang!",
+		"info_user",
+	)
+
+	// 5. KIRIM RESPONSE SUKSES
 	c.JSON(http.StatusCreated, RegisterResponse{
 		Sukses: true,
 		Pesan:  "Register berhasil",

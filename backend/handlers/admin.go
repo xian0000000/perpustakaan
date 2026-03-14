@@ -3,12 +3,14 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"backend/config"
 	"backend/models"
 	"backend/services"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // ─── CRUD User ────────────────────────────────────────────────────────────────
@@ -244,11 +246,41 @@ func AdminUpdatePeminjaman(c *gin.Context) {
 		return
 	}
 
-	p.Status = body.Status
-	if body.Status == "dikembalikan" && p.TanggalPengembalian == nil {
-		db.Model(&p).Update("status", "dikembalikan")
-	} else {
-		db.Save(&p)
+	// Jika status berubah dari dipinjam → dikembalikan, tambah stock buku
+	wasActive := p.Status == "dipinjam"
+	becomesReturned := body.Status == "dikembalikan"
+
+	tx := db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	now := time.Now()
+	updates := map[string]interface{}{"status": body.Status}
+	if becomesReturned && p.TanggalPengembalian == nil {
+		updates["tanggal_pengembalian"] = &now
+	}
+	if err := tx.Model(&p).Updates(updates).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal update status"})
+		return
+	}
+
+	// Kembalikan stok jika buku yang tadinya dipinjam sekarang dikembalikan
+	if wasActive && becomesReturned {
+		if err := tx.Model(&models.Buku{}).Where("id = ?", p.BukuID).
+			Update("stock", gorm.Expr("stock + 1")).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal update stok buku"})
+			return
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "commit gagal"})
+		return
 	}
 
 	db.Preload("User").Preload("Buku").First(&p, peminjamanID)
