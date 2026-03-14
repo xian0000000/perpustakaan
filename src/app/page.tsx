@@ -50,29 +50,24 @@ export default function Page() {
   // Realtime state
   const [chatQueue, setChatQueue] = useState<ChatMessage[]>([]);
   const [madingQueue, setMadingQueue] = useState<MadingPost[]>([]);
-  const [onlineUsers, setOnlineUsers] = useState<PresenceUser[]>([]);
   const [unreadChat, setUnreadChat] = useState(0);
   const [unreadMading, setUnreadMading] = useState(0);
 
+  // Use ref for activeId so callbacks always see latest value without stale closure
+  const activeIdRef = useRef<PanelId | null>(null);
+  useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+
   const handleChat = useCallback((msg: ChatMessage) => {
-    if (activeId === "chat") {
-      // Panel terbuka → langsung push ke queue, ChatPanel akan consume & reset
-      setChatQueue(q => [...q, msg]);
-    } else {
-      // Panel tutup → simpan di queue & naikkan unread
-      setChatQueue(q => [...q, msg]);
-      setUnreadChat(n => n + 1);
-    }
-  }, [activeId]);
+    setChatQueue(q => [...q, msg]);
+    if (activeIdRef.current !== "chat") setUnreadChat(n => n + 1);
+  }, []);
 
   const handleMading = useCallback((post: MadingPost) => {
     setMadingQueue(q => [...q, post]);
-    setUnreadMading(n => activeId === "mading" ? 0 : n + 1);
-  }, [activeId]);
+    if (activeIdRef.current !== "mading") setUnreadMading(n => n + 1);
+  }, []);
 
-  const { status: wsStatus, onlineUsers: wsOnline, sendPresence, sendChat } = useWebSocket(handleChat, handleMading);
-
-  useEffect(() => { setOnlineUsers(wsOnline); }, [wsOnline]);
+  const { status: wsStatus, onlineUsers, sendPresence, sendChat } = useWebSocket(handleChat, handleMading);
   useEffect(() => { setRole(getRole()); setNama(getNama()); }, []);
 
   // Reset unread when panel opens
