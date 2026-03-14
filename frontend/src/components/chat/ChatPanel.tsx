@@ -32,13 +32,30 @@ export function ChatPanel({ onClose, onlineUsers, sendChat, newMessages, onMessa
     return () => sendPresence("browsing");
   }, []); // eslint-disable-line
 
-  // Append new WS messages then reset queue
+  // Append new WS messages then reset queue (skip own optimistic duplicates)
   useEffect(() => {
     if (newMessages.length > 0) {
       setHistory(h => {
-        const existingIds = new Set(h.map(m => m.ID));
-        const fresh = newMessages.filter(m => !existingIds.has(m.ID));
-        return fresh.length > 0 ? [...h, ...fresh] : h;
+        const existingIds = new Set(h.filter(m => m.ID < 1e12).map(m => m.ID)); // real IDs only
+        let updated = [...h];
+        for (const msg of newMessages) {
+          if (existingIds.has(msg.ID)) continue;
+          // Check if we already have an optimistic copy (temp ID = Date.now() > 1e12)
+          const optimisticIdx = updated.findIndex(
+            m => m.ID > 1e12 && m.Nama === msg.Nama && m.Pesan === msg.Pesan
+          );
+          if (optimisticIdx !== -1) {
+            // Replace optimistic with real server message
+            updated = [
+              ...updated.slice(0, optimisticIdx),
+              msg,
+              ...updated.slice(optimisticIdx + 1),
+            ];
+          } else {
+            updated = [...updated, msg];
+          }
+        }
+        return updated;
       });
       onMessagesConsumed();
     }
@@ -52,6 +69,16 @@ export function ChatPanel({ onClose, onlineUsers, sendChat, newMessages, onMessa
   function handleSend() {
     const text = input.trim();
     if (!text) return;
+    // Optimistic update: langsung tampilkan pesan sebelum WS broadcast balik
+    const optimistic: ChatMessage = {
+      ID: Date.now(), // temp ID
+      Pesan: text,
+      Nama: myNama,
+      Waktu: new Date().toISOString(),
+      UserID: myId,
+      User: { ID: myId, Nama: myNama, Saldo: 0, Role: "" },
+    };
+    setHistory(h => [...h, optimistic]);
     sendChat(text);
     setInput("");
   }
