@@ -33,6 +33,7 @@ func ConnectDB() {
 		&models.User{},
 		&models.Buku{},
 		&models.Peminjaman{},
+		&models.AktivitasUser{},
 	)
 
 	DB.Find(&USER)

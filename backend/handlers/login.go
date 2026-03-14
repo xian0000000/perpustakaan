@@ -88,5 +88,8 @@ func HandlersLogin(c *gin.Context) {
 		},
 	}
 
+	// Catat aktivitas login
+	go CatatAktivitas(user.ID, "login", 0)
+
 	c.JSON(http.StatusOK, response)
 }

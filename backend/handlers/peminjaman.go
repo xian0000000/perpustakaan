@@ -79,6 +79,9 @@ func PinjamBuku(c *gin.Context) {
 		return
 	}
 
+	// Catat aktivitas
+	go CatatAktivitas(userID, "pinjam_buku", buku.ID)
+
 	c.JSON(200, gin.H{
 		"message": "berhasil meminjam buku",
 		"data":    peminjaman,
