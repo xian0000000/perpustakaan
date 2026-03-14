@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { API, authHeaders, fmtDateTime } from "@/lib/utils";
 import type { ChatMessage, PresenceUser } from "@/types";
 import { PanelHeader, LoadingDots, ps } from "@/components/shared/ui";
@@ -9,19 +9,48 @@ interface ChatPanelProps {
   onClose: () => void;
   onlineUsers: PresenceUser[];
   sendChat: (pesan: string) => void;
-  newMessages: ChatMessage[]; // pushed from WS
-  onMessagesConsumed: () => void; // reset queue after consuming
+  /** Parent calls this to push a WS message directly into the panel */
+  onNewMessage: (msg: ChatMessage) => void;
+  /** Parent stores the push function via this ref so it can call onNewMessage */
+  pushRef: React.MutableRefObject<((msg: ChatMessage) => void) | null>;
   sendPresence: (aksi: string, detail?: string) => void;
 }
 
-export function ChatPanel({ onClose, onlineUsers, sendChat, newMessages, onMessagesConsumed, sendPresence }: ChatPanelProps) {
+export function ChatPanel({ onClose, onlineUsers, sendChat, pushRef, sendPresence }: ChatPanelProps) {
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
-  const myId = typeof window !== "undefined" ? parseInt(localStorage.getItem("userId") ?? "0") : 0;
 
-  // Load chat history
+  const myNama = typeof window !== "undefined" ? localStorage.getItem("nama") ?? "" : "";
+  const myId   = typeof window !== "undefined" ? parseInt(localStorage.getItem("userId") ?? "0") : 0;
+
+  // Expose push function to parent via ref — called directly when WS message arrives
+  const appendMessage = useCallback((msg: ChatMessage) => {
+    setHistory(h => {
+      // Replace optimistic (temp ID > 1e12) from same user+text, or skip if real ID already exists
+      const realIds = new Set(h.filter(m => m.ID < 1e12).map(m => m.ID));
+      if (realIds.has(msg.ID)) return h; // already have it
+
+      const optimisticIdx = h.findIndex(
+        m => m.ID > 1e12 && m.Nama === msg.Nama && m.Pesan === msg.Pesan
+      );
+      if (optimisticIdx !== -1) {
+        // Swap optimistic for confirmed server message
+        const updated = [...h];
+        updated[optimisticIdx] = msg;
+        return updated;
+      }
+      return [...h, msg];
+    });
+  }, []);
+
+  useEffect(() => {
+    pushRef.current = appendMessage;
+    return () => { pushRef.current = null; };
+  }, [appendMessage, pushRef]);
+
+  // Load history on mount
   useEffect(() => {
     fetch(`${API}/api/user/chat/history`, { headers: authHeaders() })
       .then(r => r.json())
@@ -32,35 +61,6 @@ export function ChatPanel({ onClose, onlineUsers, sendChat, newMessages, onMessa
     return () => sendPresence("browsing");
   }, []); // eslint-disable-line
 
-  // Append new WS messages then reset queue (skip own optimistic duplicates)
-  useEffect(() => {
-    if (newMessages.length > 0) {
-      setHistory(h => {
-        const existingIds = new Set(h.filter(m => m.ID < 1e12).map(m => m.ID)); // real IDs only
-        let updated = [...h];
-        for (const msg of newMessages) {
-          if (existingIds.has(msg.ID)) continue;
-          // Check if we already have an optimistic copy (temp ID = Date.now() > 1e12)
-          const optimisticIdx = updated.findIndex(
-            m => m.ID > 1e12 && m.Nama === msg.Nama && m.Pesan === msg.Pesan
-          );
-          if (optimisticIdx !== -1) {
-            // Replace optimistic with real server message
-            updated = [
-              ...updated.slice(0, optimisticIdx),
-              msg,
-              ...updated.slice(optimisticIdx + 1),
-            ];
-          } else {
-            updated = [...updated, msg];
-          }
-        }
-        return updated;
-      });
-      onMessagesConsumed();
-    }
-  }, [newMessages]); // eslint-disable-line
-
   // Auto scroll
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -69,21 +69,18 @@ export function ChatPanel({ onClose, onlineUsers, sendChat, newMessages, onMessa
   function handleSend() {
     const text = input.trim();
     if (!text) return;
-    // Optimistic update: langsung tampilkan pesan sebelum WS broadcast balik
+    // Optimistic: show immediately, will be replaced by server echo
     const optimistic: ChatMessage = {
-      ID: Date.now(), // temp ID
+      ID: Date.now(), // temp ID > 1e12 by year ~2286, safe marker
       Pesan: text,
       Nama: myNama,
       Waktu: new Date().toISOString(),
       UserID: myId,
-      User: { ID: myId, Nama: myNama, Saldo: 0, Role: "" },
     };
     setHistory(h => [...h, optimistic]);
     sendChat(text);
     setInput("");
   }
-
-  const myNama = typeof window !== "undefined" ? localStorage.getItem("nama") ?? "" : "";
 
   return (
     <div style={ps.wrap}>

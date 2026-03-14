@@ -48,18 +48,26 @@ export default function Page() {
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Realtime state
-  const [chatQueue, setChatQueue] = useState<ChatMessage[]>([]);
   const [madingQueue, setMadingQueue] = useState<MadingPost[]>([]);
   const [unreadChat, setUnreadChat] = useState(0);
   const [unreadMading, setUnreadMading] = useState(0);
 
-  // Use ref for activeId so callbacks always see latest value without stale closure
+  // Use ref for activeId so callbacks always see latest value (no stale closure)
   const activeIdRef = useRef<PanelId | null>(null);
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
 
+  // Direct push ref — ChatPanel registers its appendMessage fn here
+  const chatPushRef = useRef<((msg: ChatMessage) => void) | null>(null);
+
   const handleChat = useCallback((msg: ChatMessage) => {
-    setChatQueue(q => [...q, msg]);
-    if (activeIdRef.current !== "chat") setUnreadChat(n => n + 1);
+    // If panel is open, push directly into it — zero re-render overhead on page
+    if (activeIdRef.current === "chat" && chatPushRef.current) {
+      chatPushRef.current(msg);
+    } else {
+      // Panel closed — increment unread badge only
+      setUnreadChat(n => n + 1);
+      // Still push if panel mounts later (it loads history on mount so this is fine)
+    }
   }, []);
 
   const handleMading = useCallback((post: MadingPost) => {
@@ -76,7 +84,7 @@ export default function Page() {
     if (activeId === "mading") setUnreadMading(0);
   }, [activeId]);
 
-  // Update presence when logged in
+  // Send initial presence when connected
   useEffect(() => {
     if (role && wsStatus === "connected") sendPresence("browsing");
   }, [role, wsStatus]); // eslint-disable-line
@@ -111,7 +119,7 @@ export default function Page() {
       case "throne":      return <ThronePanel onClose={() => setActiveId(null)} sendPresence={sendPresence} />;
       case "history":     return <HistoryPanel onClose={() => setActiveId(null)} />;
       case "profile":     return <ProfilePanel onClose={() => setActiveId(null)} onLogout={handleLogout} />;
-      case "chat":        return <ChatPanel onClose={() => setActiveId(null)} onlineUsers={onlineUsers} sendChat={sendChat} newMessages={chatQueue} onMessagesConsumed={() => setChatQueue([])} sendPresence={sendPresence} />;
+      case "chat":        return <ChatPanel onClose={() => setActiveId(null)} onlineUsers={onlineUsers} sendChat={sendChat} onNewMessage={handleChat} pushRef={chatPushRef} sendPresence={sendPresence} />;
       case "mading":      return <MadingPanel onClose={() => setActiveId(null)} role={role} newPosts={madingQueue} sendPresence={sendPresence} />;
       case "admin":       return <AdminPanel onClose={() => setActiveId(null)} onlineUsers={onlineUsers} />;
     }
