@@ -34,6 +34,8 @@ func ConnectDB() {
 		&models.Buku{},
 		&models.Peminjaman{},
 		&models.AktivitasUser{},
+		&models.ChatMessage{},
+		&models.MadingPost{},
 	)
 
 	DB.Find(&USER)

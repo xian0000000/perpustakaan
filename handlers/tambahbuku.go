@@ -3,6 +3,7 @@ package handlers
 import (
 	"backend/config"
 	"backend/models"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -46,6 +47,13 @@ func TambahBuku(c *gin.Context) {
 		})
 		return
 	}
+
+	// Post mading otomatis
+	go PostSystemMading(
+		"📚 Buku Baru: "+buku.NamaBuku,
+		fmt.Sprintf("Buku \"%s\" karya %s kini tersedia di perpustakaan. Stok: %d", buku.NamaBuku, buku.Penulis, buku.Stock),
+		"buku_baru",
+	)
 
 	c.JSON(http.StatusCreated, gin.H{
 		"sukses": true,
