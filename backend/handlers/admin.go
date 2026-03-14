@@ -8,6 +8,7 @@ import (
 	"backend/config"
 	"backend/models"
 	"backend/services"
+	"backend/ws"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -340,4 +341,57 @@ func AdminGetStats(c *gin.Context) {
 			"peminjaman_aktif":   peminjamanAktif,
 		},
 	})
+}
+
+// ─── Realtime / WS admin handlers ────────────────────────────────────────────
+
+// GET /api/admin/monitoring/online
+// Returns snapshot of currently connected WS clients.
+// Mirrors reference: GET /admin/users → list connected sockets
+func GetUserOnline(c *gin.Context) {
+	users := ws.H.GetOnlineUsers()
+	c.JSON(http.StatusOK, gin.H{
+		"sukses": true,
+		"data":   users,
+		"total":  len(users),
+	})
+}
+
+// GET /api/admin/monitoring  — log aktivitas (unchanged, DB-based)
+func GetMonitoring(c *gin.Context) {
+	db := config.DB
+
+	var aktivitas []models.AktivitasUser
+	if err := db.
+		Preload("User").
+		Order("waktu DESC").
+		Limit(200).
+		Find(&aktivitas).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal ambil data monitoring"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": aktivitas,
+	})
+}
+
+// POST /api/admin/kick  — kick user from WS by user_id
+// Mirrors reference: POST /admin/kick { socketId / username }
+func AdminKickUser(c *gin.Context) {
+	var body struct {
+		UserID uint `json:"user_id"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || body.UserID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id required"})
+		return
+	}
+
+	ok := ws.H.KickUser(body.UserID)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user tidak sedang online"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"sukses": true, "pesan": "User berhasil di-kick"})
 }

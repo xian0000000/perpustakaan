@@ -55,6 +55,7 @@ func SetupRoutes(r *gin.Engine) {
 		admin.DELETE("/peminjaman/:id", handlers.AdminHapusPeminjaman)
 		admin.GET("/monitoring", handlers.GetMonitoring)
 		admin.GET("/monitoring/online", handlers.GetUserOnline)
+		admin.POST("/kick", handlers.AdminKickUser)
 		admin.GET("/stats", handlers.AdminGetStats)
 		admin.DELETE("/mading/:id", handlers.AdminHapusMading)
 	}

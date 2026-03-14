@@ -20,7 +20,15 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin:    func(r *http.Request) bool { return true },
 }
 
-// WS /api/ws?token=...
+// HandleWS — adapts reference chatSocket.js connection lifecycle to Go/Gin
+//
+// JS reference flow:
+//   io.on('connection', async (socket) => {
+//     onlineUser.add(socket.id); hitung();               ← H.Register(client) triggers this
+//     socket.emit('pesan lama', messages);               ← SendTo after register
+//     socket.on('chat message', handler)                 ← readPump case "chat"
+//     socket.on('disconnect', () => { delete; hitung() }) ← H.Unregister triggers this
+//   });
 func HandleWS(c *gin.Context) {
 	tokenStr := c.Query("token")
 	if tokenStr == "" {
@@ -34,7 +42,6 @@ func HandleWS(c *gin.Context) {
 		return
 	}
 
-	// Load user info
 	var user models.User
 	if err := config.DB.First(&user, claims.UserID).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
@@ -48,19 +55,51 @@ func HandleWS(c *gin.Context) {
 	}
 
 	client := &Client{
-		Hub:      H,
-		Send:     make(chan []byte, 256),
-		UserID:   user.ID,
-		Nama:     user.Nama,
-		Role:     user.Role,
-		Aksi:     "online",
-		LastSeen: time.Now(),
+		Hub:    H,
+		Send:   make(chan []byte, 256),
+		UserID: user.ID,
+		Nama:   user.Nama,
+		Role:   user.Role,
+		Aksi:   "online",
 	}
 
+	// mirrors: onlineUser.add(socket.id); hitung()
 	H.Register(client)
+
+	// mirrors: socket.emit('pesan lama', messages)  — sent only to this new client
+	go sendOldMessages(client)
 
 	go writePump(client, conn)
 	go readPump(client, conn)
+}
+
+// sendOldMessages mirrors:
+//   const messages = await Message.find().sort({ time: 1 });
+//   socket.emit('pesan lama', messages);
+func sendOldMessages(c *Client) {
+	var msgs []models.ChatMessage
+	config.DB.
+		Preload("User").
+		Order("waktu ASC").
+		Limit(100).
+		Find(&msgs)
+
+	payloads := make([]ChatPayload, 0, len(msgs))
+	for _, m := range msgs {
+		nama := m.User.Nama
+		if nama == "" {
+			nama = "—"
+		}
+		payloads = append(payloads, ChatPayload{
+			ID:     m.ID,
+			UserID: m.UserID,
+			Nama:   nama,
+			Pesan:  m.Pesan,
+			Waktu:  m.Waktu.Format(time.RFC3339),
+		})
+	}
+
+	H.SendTo(c, "pesan_lama", payloads)
 }
 
 // ─── Read pump: client → server ─────────────────────────────────────────────
@@ -72,6 +111,7 @@ type IncomingMsg struct {
 
 func readPump(c *Client, conn *websocket.Conn) {
 	defer func() {
+		// mirrors: socket.on('disconnect', () => { onlineUser.delete; hitung() })
 		H.Unregister(c)
 		conn.Close()
 	}()
@@ -96,39 +136,41 @@ func readPump(c *Client, conn *websocket.Conn) {
 
 		switch msg.Type {
 
-		case "presence_update":
-			var p struct {
-				Aksi     string `json:"aksi"`
-				Detail   string `json:"detail"`
-				TargetID uint   `json:"target_id"`
-			}
-			if err := json.Unmarshal(msg.Payload, &p); err == nil {
-				c.UpdatePresence(p.Aksi, p.Detail, p.TargetID)
-			}
-
+		// mirrors: socket.on('chat message', async (msg) => { ... io.emit('chat message', newMsg) })
 		case "chat":
 			var p struct {
 				Pesan string `json:"pesan"`
 			}
-			if err := json.Unmarshal(msg.Payload, &p); err == nil && p.Pesan != "" {
-				// Simpan ke DB
-				chatMsg := models.ChatMessage{
-					UserID: c.UserID,
-					Pesan:  p.Pesan,
-					Waktu:  time.Now(),
-				}
-				config.DB.Create(&chatMsg)
+			if err := json.Unmarshal(msg.Payload, &p); err != nil || p.Pesan == "" {
+				continue
+			}
 
-				// Broadcast ke semua
-				H.Broadcast("chat", ChatPayload{
-					ID:     chatMsg.ID,
-					UserID: c.UserID,
-					Nama:   c.Nama,
-					Pesan:  p.Pesan,
-					Waktu:  chatMsg.Waktu.Format(time.RFC3339),
-				})
+			// Save to DB
+			chatMsg := models.ChatMessage{
+				UserID: c.UserID,
+				Pesan:  p.Pesan,
+				Waktu:  time.Now(),
+			}
+			config.DB.Create(&chatMsg)
 
-				c.UpdatePresence("chat", "", 0)
+			// mirrors: io.emit('chat message', newMsg)
+			H.Broadcast("chat", ChatPayload{
+				ID:     chatMsg.ID,
+				UserID: c.UserID,
+				Nama:   c.Nama,
+				Pesan:  p.Pesan,
+				Waktu:  chatMsg.Waktu.Format(time.RFC3339),
+			})
+
+			H.UpdatePresence(c, "chat", "")
+
+		case "presence_update":
+			var p struct {
+				Aksi   string `json:"aksi"`
+				Detail string `json:"detail"`
+			}
+			if err := json.Unmarshal(msg.Payload, &p); err == nil {
+				H.UpdatePresence(c, p.Aksi, p.Detail)
 			}
 
 		case "ping":
