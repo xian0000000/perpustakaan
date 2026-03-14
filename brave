@@ -13,7 +13,7 @@ User :
         - Pengguna :
             Fitur :
             - Melihat-lihat Buku
-            - Meminjam Buku(Membaca Buku)
+            - Meminjam Buku (Membaca Buku)
             - Mengambalikan Buku
 Buku :
     Data Buku:
