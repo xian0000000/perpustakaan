@@ -127,7 +127,7 @@ export default function Page() {
       case "throne":      return <ThronePanel onClose={() => setActiveId(null)} sendPresence={sendPresence} />;
       case "history":     return <HistoryPanel onClose={() => setActiveId(null)} />;
       case "profile":     return <ProfilePanel onClose={() => setActiveId(null)} onLogout={handleLogout} />;
-      case "chat":        return <ChatPanel onClose={() => setActiveId(null)} onlineUsers={onlineUsers} onlineCount={onlineCount} sendChat={sendChat} onNewMessage={handleChat} pushRef={chatPushRef} loadRef={chatLoadRef} sendPresence={sendPresence} />;
+      case "chat":        return <ChatPanel onClose={() => setActiveId(null)} onlineUsers={onlineUsers} onlineCount={onlineCount} sendChat={sendChat} pushRef={chatPushRef} loadRef={chatLoadRef} sendPresence={sendPresence} />;
       case "mading":      return <MadingPanel onClose={() => setActiveId(null)} role={role} newPosts={madingQueue} sendPresence={sendPresence} />;
       case "admin":       return <AdminPanel onClose={() => setActiveId(null)} onlineUsers={onlineUsers} onlineCount={onlineCount} />;
     }
