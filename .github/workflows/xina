@@ -1,0 +1,35 @@
+name: Deploy Subfolder ke Branch Terpisah
+
+on:
+  # Workflow ini akan jalan setiap kali ada push ke branch main
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # Langkah 1: Checkout kode terbaru dari branch main
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Langkah 2: Deploy folder /backend ke branch 'backend-deploy'
+      - name: Deploy Backend ke branch backend-deploy
+        uses: s0/git-publish-subdir-action@develop
+        env:
+          REPO: self
+          BRANCH: backend-deploy # Target branch
+          FOLDER: backend # Subfolder yang mau dideploy
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Opsional: Pesan commit-nya biar rapi
+          MESSAGE: "Deploy backend dari commit {sha}"
+
+      # Langkah 3: Deploy folder /frontend ke branch 'frontend-deploy'
+      - name: Deploy Frontend ke branch frontend-deploy
+        uses: s0/git-publish-subdir-action@develop
+        env:
+          REPO: self
+          BRANCH: frontend-deploy
+          FOLDER: frontend
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MESSAGE: "Deploy frontend dari commit {sha}"
