@@ -55,8 +55,14 @@ export default function Page() {
   const [unreadMading, setUnreadMading] = useState(0);
 
   const handleChat = useCallback((msg: ChatMessage) => {
-    setChatQueue(q => [...q, msg]);
-    setUnreadChat(n => activeId === "chat" ? 0 : n + 1);
+    if (activeId === "chat") {
+      // Panel terbuka → langsung push ke queue, ChatPanel akan consume & reset
+      setChatQueue(q => [...q, msg]);
+    } else {
+      // Panel tutup → simpan di queue & naikkan unread
+      setChatQueue(q => [...q, msg]);
+      setUnreadChat(n => n + 1);
+    }
   }, [activeId]);
 
   const handleMading = useCallback((post: MadingPost) => {
@@ -110,7 +116,7 @@ export default function Page() {
       case "throne":      return <ThronePanel onClose={() => setActiveId(null)} sendPresence={sendPresence} />;
       case "history":     return <HistoryPanel onClose={() => setActiveId(null)} />;
       case "profile":     return <ProfilePanel onClose={() => setActiveId(null)} onLogout={handleLogout} />;
-      case "chat":        return <ChatPanel onClose={() => setActiveId(null)} onlineUsers={onlineUsers} sendChat={sendChat} newMessages={chatQueue} sendPresence={sendPresence} />;
+      case "chat":        return <ChatPanel onClose={() => setActiveId(null)} onlineUsers={onlineUsers} sendChat={sendChat} newMessages={chatQueue} onMessagesConsumed={() => setChatQueue([])} sendPresence={sendPresence} />;
       case "mading":      return <MadingPanel onClose={() => setActiveId(null)} role={role} newPosts={madingQueue} sendPresence={sendPresence} />;
       case "admin":       return <AdminPanel onClose={() => setActiveId(null)} onlineUsers={onlineUsers} />;
     }
