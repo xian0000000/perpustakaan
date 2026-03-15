@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useCallback, memo } from "react";
-import { fmtDateTime } from "@/lib/utils";
+import { API, authHeaders, fmtDateTime } from "@/lib/utils";
 import type { ChatMessage, PresenceUser } from "@/types";
 import { PanelHeader, LoadingDots, ps } from "@/components/shared/ui";
 import { aksiLabel } from "@/lib/utils";
@@ -10,14 +10,14 @@ interface ChatPanelProps {
   onlineUsers: PresenceUser[];
   onlineCount: number;
   sendChat: (pesan: string) => void;
-  /** Parent registers push fn here — called directly on WS "chat" event */
+  /** Parent calls this to push a single new WS "chat" message directly into the panel */
   pushRef: React.MutableRefObject<((msg: ChatMessage) => void) | null>;
-  /** Parent registers loadHistory fn here — called on WS "pesan_lama" event */
+  /** Parent calls this when WS "pesan_lama" fires — used as fallback if REST fails */
   loadRef: React.MutableRefObject<((msgs: ChatMessage[]) => void) | null>;
   sendPresence: (aksi: string, detail?: string) => void;
 }
 
-// Mirrors App.js ChatMessages memo component
+// Memoised message list — only re-renders when messages array changes
 const ChatMessages = memo(function ChatMessages({
   messages,
   myNama,
@@ -27,8 +27,7 @@ const ChatMessages = memo(function ChatMessages({
   myNama: string;
   bottomRef: React.RefObject<HTMLDivElement | null>;
 }) {
-  // mirrors: messages.slice(-50)
-  const visible = messages.slice(-50);
+  const visible = messages.slice(-50); // mirrors App.js: messages.slice(-50)
 
   return (
     <div style={{
@@ -44,13 +43,10 @@ const ChatMessages = memo(function ChatMessages({
       {visible.map((m, i) => {
         const isMine = m.Nama === myNama;
         return (
-          <div
-            key={m.ID ?? i}
-            style={{
-              marginBottom: 10, display: "flex", flexDirection: "column",
-              alignItems: isMine ? "flex-end" : "flex-start",
-            }}
-          >
+          <div key={m.ID ?? i} style={{
+            marginBottom: 10, display: "flex", flexDirection: "column",
+            alignItems: isMine ? "flex-end" : "flex-start",
+          }}>
             {!isMine && (
               <div style={{
                 fontFamily: "'Cinzel',serif", fontSize: 10,
@@ -69,9 +65,7 @@ const ChatMessages = memo(function ChatMessages({
             }}>
               {m.Pesan}
             </div>
-            <div style={{
-              fontFamily: "monospace", fontSize: 9, color: "#3d2f4a", marginTop: 3,
-            }}>
+            <div style={{ fontFamily: "monospace", fontSize: 9, color: "#3d2f4a", marginTop: 3 }}>
               {fmtDateTime(m.Waktu)}
             </div>
           </div>
@@ -89,25 +83,46 @@ export function ChatPanel({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading]   = useState(true);
   const [input, setInput]       = useState("");
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const bottomRef  = useRef<HTMLDivElement>(null);
+  const restLoaded = useRef(false); // prevent WS fallback overwriting REST data
 
-  const myNama = typeof window !== "undefined"
-    ? localStorage.getItem("nama") ?? "" : "";
-  const myId = typeof window !== "undefined"
-    ? parseInt(localStorage.getItem("userId") ?? "0") : 0;
+  const myNama = typeof window !== "undefined" ? localStorage.getItem("nama") ?? "" : "";
+  const myId   = typeof window !== "undefined" ? parseInt(localStorage.getItem("userId") ?? "0") : 0;
 
-  // mirrors: socket.on('pesan lama', (msgs) => setMessages(msgs || []))
-  // Called by parent when WS fires "pesan_lama"
+  // ── Load history via REST on mount (primary) ──────────────────────────────
+  // This is the same endpoint that was always there: GET /api/user/chat/history
+  // The REST response uses PascalCase (ID, Nama, Pesan, Waktu) which matches ChatMessage type
+  useEffect(() => {
+    fetch(`${API}/api/user/chat/history`, { headers: authHeaders() })
+      .then(r => r.json())
+      .then(d => {
+        if (d.data) {
+          // REST returns { ID, UserID, Nama, Pesan, Waktu } — direct assign
+          setMessages(d.data);
+          restLoaded.current = true;
+        }
+      })
+      .catch(() => {}) // WS pesan_lama will cover if REST fails
+      .finally(() => setLoading(false));
+
+    sendPresence("chat");
+    return () => sendPresence("browsing");
+  }, []); // eslint-disable-line
+
+  // ── WS pesan_lama fallback ────────────────────────────────────────────────
+  // Only used if REST hasn't loaded yet (e.g. token expired but WS still open)
   const handlePesanLama = useCallback((msgs: ChatMessage[]) => {
-    setMessages(msgs);
-    setLoading(false);
+    if (!restLoaded.current) {
+      setMessages(msgs);
+      setLoading(false);
+    }
   }, []);
 
-  // mirrors: socket.on('chat message', (msg) => setMessages(prev => [...prev, msg]))
-  // Called directly by parent on each new WS "chat" event
+  // ── WS new message — push directly into state ─────────────────────────────
+  // mirrors: socket.on('chat message', msg => setMessages(prev => [...prev, msg]))
   const appendMessage = useCallback((msg: ChatMessage) => {
     setMessages(prev => {
-      // Replace optimistic (temp ID > 1e12) from same sender + text
+      // Replace optimistic entry (temp ID > 1e12) from same sender+text
       const idx = prev.findIndex(
         m => m.ID > 1e12 && m.Nama === msg.Nama && m.Pesan === msg.Pesan
       );
@@ -116,23 +131,20 @@ export function ChatPanel({
         updated[idx] = msg;
         return updated;
       }
-      // Skip if real ID already present
+      // Skip if real server ID already present
       if (prev.some(m => m.ID === msg.ID && m.ID < 1e12)) return prev;
       return [...prev, msg];
     });
   }, []);
 
-  // Register push + load refs so parent can call them without prop-drilling
+  // Register refs so parent can invoke these directly without prop re-render
   useEffect(() => {
     pushRef.current = appendMessage;
     loadRef.current = handlePesanLama;
-    return () => {
-      pushRef.current = null;
-      loadRef.current = null;
-    };
+    return () => { pushRef.current = null; loadRef.current = null; };
   }, [appendMessage, handlePesanLama, pushRef, loadRef]);
 
-  // Auto-scroll — mirrors App.js useEffect on messages with setTimeout
+  // Auto-scroll on new messages — mirrors App.js setTimeout pattern
   useEffect(() => {
     const t = setTimeout(() => {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -140,25 +152,12 @@ export function ChatPanel({
     return () => clearTimeout(t);
   }, [messages]);
 
-  // Announce presence on mount/unmount
-  useEffect(() => {
-    sendPresence("chat");
-    return () => sendPresence("browsing");
-  }, []); // eslint-disable-line
-
-  // If WS reconnects while panel is open, loading might stay true
-  // Reset after 3s as a safety valve
-  useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 3000);
-    return () => clearTimeout(t);
-  }, []);
-
   const handleSend = useCallback(() => {
     const text = input.trim();
     if (!text) return;
-    // Optimistic — shown instantly, swapped for server echo via appendMessage
+    // Optimistic update — temp ID replaced by server echo via appendMessage
     const optimistic: ChatMessage = {
-      ID: Date.now(),   // temp ID, > 1e12 until year ~2286
+      ID: Date.now(), // safe temp marker until year ~2286
       UserID: myId,
       Nama: myNama,
       Pesan: text,
@@ -181,7 +180,6 @@ export function ChatPanel({
         sub={`WebSocket chat  •  ${onlineCount} online`}
         color="#f472b6" onClose={onClose}
       />
-
       <div style={{ display: "flex", gap: 12 }}>
         {/* Chat area */}
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -189,7 +187,6 @@ export function ChatPanel({
             ? <div style={{ height: 380, display: "flex", alignItems: "center", justifyContent: "center" }}><LoadingDots /></div>
             : <ChatMessages messages={messages} myNama={myNama} bottomRef={bottomRef} />
           }
-
           <div style={{ display: "flex", gap: 8 }}>
             <input
               value={input}
@@ -256,3 +253,5 @@ export function ChatPanel({
     </div>
   );
 }
+
+
