@@ -3,7 +3,6 @@ package routers
 import (
 	"backend/handlers"
 	"backend/middleware"
-	"backend/ws"
 
 	"github.com/gin-gonic/gin"
 )
@@ -11,9 +10,6 @@ import (
 func SetupRoutes(r *gin.Engine) {
 	r.Use(middleware.CORSMiddleware())
 	r.OPTIONS("/*path", func(c *gin.Context) { c.Status(204) })
-
-	// WebSocket
-	r.GET("/api/ws", ws.HandleWS)
 
 	// Public
 	public := r.Group("/api")
@@ -35,7 +31,6 @@ func SetupRoutes(r *gin.Engine) {
 		user.GET("/peminjaman", handlers.GetRiwayatPeminjaman)
 		user.GET("/baca/:id", handlers.BacaBuku)
 		user.POST("/mading", handlers.PostMading)
-		user.GET("/chat/history", handlers.GetChatHistory)
 	}
 
 	// Admin
@@ -53,9 +48,6 @@ func SetupRoutes(r *gin.Engine) {
 		admin.GET("/peminjaman", handlers.AdminGetAllPeminjaman)
 		admin.PUT("/peminjaman/:id", handlers.AdminUpdatePeminjaman)
 		admin.DELETE("/peminjaman/:id", handlers.AdminHapusPeminjaman)
-		admin.GET("/monitoring", handlers.GetMonitoring)
-		admin.GET("/monitoring/online", handlers.GetUserOnline)
-		admin.POST("/kick", handlers.AdminKickUser)
 		admin.GET("/stats", handlers.AdminGetStats)
 		admin.DELETE("/mading/:id", handlers.AdminHapusMading)
 	}

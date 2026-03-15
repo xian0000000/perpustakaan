@@ -7,11 +7,9 @@ import { PanelHeader, Field, Feedback, LoadingDots, ps } from "@/components/shar
 interface MadingPanelProps {
   onClose: () => void;
   role: UserRole;
-  newPosts: MadingPost[];
-  sendPresence: (aksi: string) => void;
 }
 
-export function MadingPanel({ onClose, role, newPosts, sendPresence }: MadingPanelProps) {
+export function MadingPanel({ onClose, role }: MadingPanelProps) {
   const [posts, setPosts] = useState<MadingPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"baca" | "posting">("baca");
@@ -24,14 +22,7 @@ export function MadingPanel({ onClose, role, newPosts, sendPresence }: MadingPan
     fetch(`${API}/api/mading`)
       .then(r => r.json()).then(d => { if (d.data) setPosts(d.data); })
       .catch(() => {}).finally(() => setLoading(false));
-    sendPresence("mading");
-    return () => sendPresence("browsing");
-  }, []); // eslint-disable-line
-
-  // Prepend new realtime posts
-  useEffect(() => {
-    if (newPosts.length > 0) setPosts(p => [...newPosts, ...p]);
-  }, [newPosts]);
+  }, []);
 
   async function handlePost(e: FormEvent) {
     e.preventDefault(); if (!form.judul || !form.isi) { setError("Judul dan isi wajib."); return; }

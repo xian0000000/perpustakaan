@@ -2,16 +2,6 @@ package models
 
 import "time"
 
-type ChatMessage struct {
-	ID      uint      `gorm:"primaryKey"`
-	UserID  uint
-	Pesan   string
-	Waktu   time.Time
-	User    User
-}
-
-func (ChatMessage) TableName() string { return "chat_message" }
-
 type MadingPost struct {
 	ID        uint      `gorm:"primaryKey"`
 	Judul     string

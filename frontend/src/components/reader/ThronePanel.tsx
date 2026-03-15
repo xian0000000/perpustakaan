@@ -16,9 +16,8 @@ const readerStyle: Record<string, CSSProperties> = {
   tamat: { textAlign: "center", color: "#3d2f4a", fontFamily: "'Cinzel',serif", fontSize: 12, letterSpacing: ".25em", marginTop: 8 },
 };
 
-export function ThronePanel({ onClose, sendPresence }: {
+export function ThronePanel({ onClose }: {
   onClose: () => void;
-  sendPresence: (aksi: string, detail?: string, targetId?: number) => void;
 }) {
   const [tab, setTab] = useState<"pinjam" | "kembali" | "baca">("pinjam");
   const [inputId, setInputId] = useState("");
@@ -30,12 +29,6 @@ export function ThronePanel({ onClose, sendPresence }: {
 
   function reset() { setInputId(""); setResult(null); setError(""); setSuccess(""); setBukuBaca(null); }
   useEffect(reset, [tab]);
-
-  // Update presence when reading
-  useEffect(() => {
-    if (bukuBaca) sendPresence("membaca", bukuBaca.NamaBuku, bukuBaca.ID);
-    return () => { if (bukuBaca) sendPresence("browsing"); };
-  }, [bukuBaca]); // eslint-disable-line
 
   async function handleAction() {
     if (!inputId.trim()) return;

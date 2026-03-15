@@ -1,24 +1,15 @@
 "use client";
 import { useState, useEffect, FormEvent } from "react";
-import { API, authHeaders, fmtDate, fmtDateTime, aksiLabel } from "@/lib/utils";
-import type { Buku, User, Peminjaman, AktivitasUser, Stats, PresenceUser } from "@/types";
+import { API, authHeaders, fmtDate } from "@/lib/utils";
+import type { Buku, User, Peminjaman, Stats } from "@/types";
 import { PanelHeader, Field, Feedback, LoadingDots, ps, MC, roleAdmin, rolePengguna } from "@/components/shared/ui";
 
-type AdminTab = "stats" | "monitoring" | "buku" | "users" | "peminjaman";
+type AdminTab = "stats" | "buku" | "users" | "peminjaman";
 
-export function AdminPanel({
-  onClose,
-  onlineUsers,
-  onlineCount,
-}: {
-  onClose: () => void;
-  onlineUsers: PresenceUser[];
-  onlineCount: number;
-}) {
+export function AdminPanel({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<AdminTab>("stats");
   const tabs: { key: AdminTab; icon: string; label: string; color: string }[] = [
     { key: "stats",      icon: "📊", label: "Statistik",  color: "#fbbf24" },
-    { key: "monitoring", icon: "🔭", label: "Monitoring", color: "#f472b6" },
     { key: "buku",       icon: "📚", label: "Buku",       color: "#fb923c" },
     { key: "users",      icon: "👥", label: "User",       color: "#a78bfa" },
     { key: "peminjaman", icon: "📋", label: "Peminjaman", color: "#38bdf8" },
@@ -35,7 +26,6 @@ export function AdminPanel({
         ))}
       </div>
       {tab === "stats"      && <AdminStats />}
-      {tab === "monitoring" && <AdminMonitoring onlineUsers={onlineUsers} onlineCount={onlineCount} />}
       {tab === "buku"       && <AdminBuku />}
       {tab === "users"      && <AdminUsers />}
       {tab === "peminjaman" && <AdminPeminjaman />}
@@ -66,171 +56,6 @@ function AdminStats() {
     </div>
   );
 }
-
-// ── Monitoring — mirrors reference admin.html logic ────────────────────────
-// Realtime: dari WS presence (langsung via prop — selalu fresh)
-// Log: REST /api/admin/monitoring (DB log)
-// Kick: POST /api/admin/kick  mirrors reference admin/kick endpoint
-function AdminMonitoring({
-  onlineUsers,
-  onlineCount,
-}: {
-  onlineUsers: PresenceUser[];
-  onlineCount: number;
-}) {
-  const [view, setView]           = useState<"realtime" | "log">("realtime");
-  const [log, setLog]             = useState<AktivitasUser[]>([]);
-  const [loadingLog, setLoadingLog] = useState(false);
-  const [error, setError]         = useState("");
-  const [kickMsg, setKickMsg]     = useState("");
-  const [kicking, setKicking]     = useState<number | null>(null);
-
-  function loadLog() {
-    setLoadingLog(true); setError("");
-    fetch(`${API}/api/admin/monitoring`, { headers: authHeaders() })
-      .then(r => r.json())
-      .then(d => { if (d.data) setLog(d.data); else setError(d.error || "Gagal"); })
-      .catch(() => setError("Gagal"))
-      .finally(() => setLoadingLog(false));
-  }
-
-  useEffect(() => { if (view === "log") loadLog(); }, [view]); // eslint-disable-line
-
-  // mirrors reference: admin.html kick button → POST /admin/kick
-  async function handleKick(userID: number, nama: string) {
-    if (!confirm(`Kick ${nama} dari sesi ini?`)) return;
-    setKicking(userID);
-    setKickMsg("");
-    try {
-      const r = await fetch(`${API}/api/admin/kick`, {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({ user_id: userID }),
-      });
-      const d = await r.json();
-      if (d.sukses) setKickMsg(`✓ ${nama} berhasil di-kick`);
-      else setKickMsg(`✗ ${d.error || "Gagal"}`);
-    } catch {
-      setKickMsg("✗ Gagal terhubung");
-    } finally {
-      setKicking(null);
-    }
-  }
-
-  return (
-    <div style={{ marginTop: 12 }}>
-      <div style={{ ...ps.toggleRow, marginBottom: 12 }}>
-        <button
-          onClick={() => setView("realtime")}
-          style={{ ...ps.toggleBtn, fontSize: 11, color: view === "realtime" ? "#e2d9c8" : "#5a4f6a", borderBottomColor: view === "realtime" ? "#f472b6" : "transparent" }}
-        >
-          🟢 Realtime ({onlineCount} online)
-        </button>
-        <button
-          onClick={() => setView("log")}
-          style={{ ...ps.toggleBtn, fontSize: 11, color: view === "log" ? "#e2d9c8" : "#5a4f6a", borderBottomColor: view === "log" ? "#f472b6" : "transparent" }}
-        >
-          📜 Log Aktivitas
-        </button>
-        {view === "log" && (
-          <button onClick={loadLog} style={{ ...ps.submitBtn, marginLeft: "auto", padding: "3px 10px", width: "auto", fontSize: 10 }}>↺</button>
-        )}
-      </div>
-
-      {kickMsg && (
-        <div style={{
-          fontFamily: "monospace", fontSize: 11, marginBottom: 10,
-          color: kickMsg.startsWith("✓") ? "#34d399" : "#f87171",
-          padding: "6px 10px", background: "rgba(0,0,0,.2)",
-          border: `1px solid ${kickMsg.startsWith("✓") ? "#34d39933" : "#f8717133"}`,
-          borderRadius: 4,
-        }}>
-          {kickMsg}
-        </div>
-      )}
-
-      {/* ── Realtime tab — data comes directly from WS, always fresh ── */}
-      {view === "realtime" && (
-        <div>
-          {onlineUsers.length === 0 && (
-            <p style={ps.empty}>Tidak ada pengguna online saat ini.</p>
-          )}
-          {onlineUsers.map(u => {
-            const { icon, color, label } = aksiLabel(u.aksi);
-            return (
-              <div key={u.user_id} style={{ ...ps.card, display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", marginBottom: 6 }}>
-                {/* Avatar */}
-                <div style={{ ...ps.profileAvatar, width: 36, height: 36, fontSize: 13, flexShrink: 0, borderColor: color + "55", background: color + "15" }}>
-                  {u.nama.charAt(0).toUpperCase()}
-                </div>
-
-                {/* Info */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <span style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: "#c9b99a" }}>{u.nama}</span>
-                    <span style={{ ...ps.statusBadge, color, borderColor: color + "44", background: color + "10", fontSize: 9 }}>{icon} {label}</span>
-                    {u.role === "admin" && (
-                      <span style={{ ...ps.statusBadge, color: "#fbbf24", borderColor: "#fbbf2444", fontSize: 9 }}>admin</span>
-                    )}
-                  </div>
-                  {u.detail && (
-                    <div style={{ fontFamily: "'IM Fell English',serif", fontSize: 11, color: "#7a6e60", marginTop: 3, fontStyle: "italic" }}>
-                      📖 {u.detail}
-                    </div>
-                  )}
-                </div>
-
-                {/* Online dot */}
-                <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#34d399", boxShadow: "0 0 6px #34d39988", flexShrink: 0 }} />
-
-                {/* Kick button — mirrors reference admin.html kick button */}
-                {u.role !== "admin" && (
-                  <button
-                    onClick={() => handleKick(u.user_id, u.nama)}
-                    disabled={kicking === u.user_id}
-                    style={{
-                      background: "transparent", border: "1px solid #f8717144",
-                      borderRadius: 4, color: "#f87171", cursor: "pointer",
-                      fontSize: 10, padding: "3px 8px", fontFamily: "monospace",
-                      opacity: kicking === u.user_id ? 0.5 : 1, flexShrink: 0,
-                    }}
-                  >
-                    {kicking === u.user_id ? "…" : "kick"}
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ── Log tab — DB history ── */}
-      {view === "log" && (
-        <div>
-          {loadingLog && <LoadingDots />}
-          {error && <Feedback type="error">{error}</Feedback>}
-          {!loadingLog && log.map(a => {
-            const { icon, color } = aksiLabel(a.Aksi);
-            return (
-              <div key={a.ID} style={{ ...ps.card, display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", marginBottom: 5 }}>
-                <span style={{ fontSize: 18, flexShrink: 0 }}>{icon}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                    <span style={{ fontFamily: "'Cinzel',serif", fontSize: 11, color: "#c9b99a" }}>{a.User?.Nama ?? `User #${a.UserID}`}</span>
-                    <span style={{ ...ps.statusBadge, color, borderColor: color + "44", background: color + "10", fontSize: 9 }}>{a.Aksi.replace(/_/g, " ")}</span>
-                    {a.TargetID > 0 && <span style={{ fontFamily: "monospace", fontSize: 9, color: "#5a4f6a" }}>→ #{a.TargetID}</span>}
-                  </div>
-                  <div style={{ fontFamily: "monospace", fontSize: 9, color: "#3d2f4a", marginTop: 2 }}>{fmtDateTime(a.Waktu)}</div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
 
 function AdminBuku() {
   const [tab, setTab] = useState<"tambah" | "update" | "hapus">("tambah");
