@@ -43,15 +43,6 @@ export interface Stats {
   peminjaman_aktif: number;
 }
 
-export interface ChatMessage {
-  ID: number;
-  UserID: number;
-  Nama: string;
-  Pesan: string;
-  Waktu: string;
-  User?: User;
-}
-
 export interface MadingPost {
   ID: number;
   Judul: string;
@@ -60,22 +51,6 @@ export interface MadingPost {
   UserID: number;
   CreatedAt: string;
   User?: User;
-}
-
-// WebSocket presence
-export interface PresenceUser {
-  user_id: number;
-  nama: string;
-  role: string;
-  aksi: string;      // "online" | "membaca" | "chat" | "mading" | "browsing" | "offline"
-  target_id?: number;
-  detail?: string;
-}
-
-// WebSocket message envelope
-export interface WSMessage<T = unknown> {
-  type: string;
-  payload: T;
 }
 
 export interface BukuBaca {
