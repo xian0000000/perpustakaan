@@ -2,11 +2,11 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"backend/config"
 	"backend/models"
-	"backend/ws"
 
 	"github.com/gin-gonic/gin"
 )
@@ -30,17 +30,17 @@ func GetMading(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"sukses": true, "data": posts})
 }
 
-// POST /api/mading  — user bisa post (auth required)
+// POST /api/user/mading  — user posting mading
 func PostMading(c *gin.Context) {
 	userID := c.MustGet("user_id").(uint)
 
 	var body struct {
-		Judul    string `json:"judul" binding:"required"`
-		Isi      string `json:"isi" binding:"required"`
+		Judul    string `json:"judul"`
+		Isi      string `json:"isi"`
 		Kategori string `json:"kategori"`
 	}
-	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := c.ShouldBindJSON(&body); err != nil || body.Judul == "" || body.Isi == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "judul dan isi wajib"})
 		return
 	}
 
@@ -62,19 +62,8 @@ func PostMading(c *gin.Context) {
 		return
 	}
 
-	// Load user
 	config.DB.Preload("User").First(&post, post.ID)
 	post.User.Password = ""
-
-	// Broadcast ke semua via WS
-	ws.H.Broadcast("mading_new", ws.MadingPayload{
-		ID:       post.ID,
-		Judul:    post.Judul,
-		Isi:      post.Isi,
-		Kategori: post.Kategori,
-		Nama:     post.User.Nama,
-		Waktu:    post.CreatedAt.Format(time.RFC3339),
-	})
 
 	c.JSON(http.StatusCreated, gin.H{
 		"sukses": true,
@@ -85,7 +74,11 @@ func PostMading(c *gin.Context) {
 
 // DELETE /api/admin/mading/:id  — admin only
 func AdminHapusMading(c *gin.Context) {
-	id := c.Param("id")
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id tidak valid"})
+		return
+	}
 	if err := config.DB.Delete(&models.MadingPost{}, id).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal hapus"})
 		return
@@ -93,47 +86,14 @@ func AdminHapusMading(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"sukses": true, "pesan": "Mading dihapus"})
 }
 
-// ─── Chat history ─────────────────────────────────────────────────────────────
-
-// GET /api/chat/history  — auth required, ambil 100 chat terakhir
-func GetChatHistory(c *gin.Context) {
-	var msgs []models.ChatMessage
-	if err := config.DB.
-		Preload("User").
-		Order("waktu DESC").
-		Limit(100).
-		Find(&msgs).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal ambil chat"})
-		return
-	}
-	// Reverse agar urutan kronologis
-	for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
-		msgs[i], msgs[j] = msgs[j], msgs[i]
-	}
-	for i := range msgs {
-		msgs[i].User.Password = ""
-	}
-	c.JSON(http.StatusOK, gin.H{"sukses": true, "data": msgs})
-}
-
 // ─── System mading helper (dipanggil dari handler lain) ──────────────────────
 
 func PostSystemMading(judul, isi, kategori string) {
-	post := models.MadingPost{
+	config.DB.Create(&models.MadingPost{
 		Judul:     judul,
 		Isi:       isi,
 		Kategori:  kategori,
-		UserID:    0, // system
+		UserID:    0,
 		CreatedAt: time.Now(),
-	}
-	config.DB.Create(&post)
-
-	ws.H.Broadcast("mading_new", ws.MadingPayload{
-		ID:       post.ID,
-		Judul:    post.Judul,
-		Isi:      post.Isi,
-		Kategori: post.Kategori,
-		Nama:     "Sistem",
-		Waktu:    post.CreatedAt.Format(time.RFC3339),
 	})
 }
